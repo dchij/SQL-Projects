@@ -1,1 +1,178 @@
+------------------------------------------------------------------------------------
+---------------------------------- Pricing and Ratings -----------------------------------
+------------------------------------------------------------------------------------
 
+/* First clean the given tables */
+
+-- Cleaning the customer_orders table
+DROP TABLE IF EXISTS customer_orders_clean;
+CREATE TEMP TABLE customer_orders_clean AS (
+    SELECT  order_id,
+            customer_id,
+            pizza_id,
+            CASE
+                WHEN exclusions = '' THEN NULL
+                WHEN exclusions = 'null' THEN NULL
+                ELSE exclusions
+            END AS exclusions,
+            CASE
+                WHEN extras = '' THEN NULL
+                WHEN extras = 'null' THEN NULL
+                WHEN extras = 'NaN' THEN NULL
+                ELSE extras
+            END AS extras,
+            order_time
+    FROM pizza_runner.customer_orders
+);
+
+-- Sanity check for the cleaned customer_orders table
+SELECT * FROM pizza_runner.customer_orders;
+| order_id | customer_id | pizza_id | exclusions | extras | order_time               |
+| -------- | ----------- | -------- | ---------- | ------ | ------------------------ |
+| 1        | 101         | 1        |            |        | 2020-01-01T18:05:02.000Z |
+| 2        | 101         | 1        |            |        | 2020-01-01T19:00:52.000Z |
+| 3        | 102         | 1        |            |        | 2020-01-02T12:51:23.000Z |
+| 3        | 102         | 2        |            |        | 2020-01-02T12:51:23.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 2        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 5        | 104         | 1        | null       | 1      | 2020-01-08T21:00:29.000Z |
+| 6        | 101         | 2        | null       | null   | 2020-01-08T21:03:13.000Z |
+| 7        | 105         | 2        | null       | 1      | 2020-01-08T21:20:29.000Z |
+| 8        | 102         | 1        | null       | null   | 2020-01-09T23:54:33.000Z |
+| 9        | 103         | 1        | 4          | 1, 5   | 2020-01-10T11:22:59.000Z |
+| 10       | 104         | 1        | null       | null   | 2020-01-11T18:34:49.000Z |
+| 10       | 104         | 1        | 2, 6       | 1, 4   | 2020-01-11T18:34:49.000Z |
+
+---
+
+SELECT * FROM customer_orders_clean;
+| order_id | customer_id | pizza_id | exclusions | extras | order_time               |
+| -------- | ----------- | -------- | ---------- | ------ | ------------------------ |
+| 1        | 101         | 1        |            |        | 2020-01-01T18:05:02.000Z |
+| 2        | 101         | 1        |            |        | 2020-01-01T19:00:52.000Z |
+| 3        | 102         | 1        |            |        | 2020-01-02T12:51:23.000Z |
+| 3        | 102         | 2        |            |        | 2020-01-02T12:51:23.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 2        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 5        | 104         | 1        |            | 1      | 2020-01-08T21:00:29.000Z |
+| 6        | 101         | 2        |            |        | 2020-01-08T21:03:13.000Z |
+| 7        | 105         | 2        |            | 1      | 2020-01-08T21:20:29.000Z |
+| 8        | 102         | 1        |            |        | 2020-01-09T23:54:33.000Z |
+| 9        | 103         | 1        | 4          | 1, 5   | 2020-01-10T11:22:59.000Z |
+| 10       | 104         | 1        |            |        | 2020-01-11T18:34:49.000Z |
+| 10       | 104         | 1        | 2, 6       | 1, 4   | 2020-01-11T18:34:49.000Z |
+
+---
+
+-- Cleaning the runner_orders table
+DROP TABLE IF EXISTS runner_orders_clean;
+CREATE TEMP TABLE runner_orders_clean AS (
+    SELECT
+        order_id,
+        runner_id,
+        CAST(
+            CASE
+                WHEN pickup_time = 'null' THEN NULL
+                ELSE pickup_time
+            END AS TIMESTAMP
+        ) AS pickup_time,
+        CAST(
+            CASE 
+                WHEN distance = 'null' THEN NULL
+                ELSE REGEXP_REPLACE(distance, '[a-z]+', '', 'g')
+            END AS DECIMAL 
+        )  AS distance,
+        CAST(
+            CASE 
+                WHEN duration = 'null' THEN NULL
+                ELSE REGEXP_REPLACE(duration, '[a-z]+', '', 'g')
+            END AS DECIMAL 
+        )  AS duration,
+        CASE
+            WHEN cancellation = 'null' OR cancellation = 'NaN' OR cancellation = '' THEN NULL
+            ELSE cancellation
+        END AS cancellation
+    FROM pizza_runner.runner_orders
+);
+
+-- Sanity check for the cleaned runner_orders table
+SELECT * FROM pizza_runner.runner_orders;
+| order_id | runner_id | pickup_time         | distance | duration   | cancellation            |
+| -------- | --------- | ------------------- | -------- | ---------- | ----------------------- |
+| 1        | 1         | 2020-01-01 18:15:34 | 20km     | 32 minutes |                         |
+| 2        | 1         | 2020-01-01 19:10:54 | 20km     | 27 minutes |                         |
+| 3        | 1         | 2020-01-02 00:12:37 | 13.4km   | 20 mins    |                         |
+| 4        | 2         | 2020-01-04 13:53:03 | 23.4     | 40         |                         |
+| 5        | 3         | 2020-01-08 21:10:57 | 10       | 15         |                         |
+| 6        | 3         | null                | null     | null       | Restaurant Cancellation |
+| 7        | 2         | 2020-01-08 21:30:45 | 25km     | 25mins     | null                    |
+| 8        | 2         | 2020-01-10 00:15:02 | 23.4 km  | 15 minute  | null                    |
+| 9        | 2         | null                | null     | null       | Customer Cancellation   |
+| 10       | 1         | 2020-01-11 18:50:20 | 10km     | 10minutes  | null                    |
+
+---
+
+SELECT * FROM runner_orders_clean;
+
+| order_id | runner_id | pickup_time              | distance | duration | cancellation            |
+| -------- | --------- | ------------------------ | -------- | -------- | ----------------------- |
+| 1        | 1         | 2020-01-01T18:15:34.000Z | 20       | 32       |                         |
+| 2        | 1         | 2020-01-01T19:10:54.000Z | 20       | 27       |                         |
+| 3        | 1         | 2020-01-02T00:12:37.000Z | 13.4     | 20       |                         |
+| 4        | 2         | 2020-01-04T13:53:03.000Z | 23.4     | 40       |                         |
+| 5        | 3         | 2020-01-08T21:10:57.000Z | 10       | 15       |                         |
+| 6        | 3         |                          |          |          | Restaurant Cancellation |
+| 7        | 2         | 2020-01-08T21:30:45.000Z | 25       | 25       |                         |
+| 8        | 2         | 2020-01-10T00:15:02.000Z | 23.4     | 15       |                         |
+| 9        | 2         |                          |          |          | Customer Cancellation   |
+| 10       | 1         | 2020-01-11T18:50:20.000Z | 10       | 10       |                         |
+
+---
+
+
+----------------------------------------------------------------------------------
+----------------------------------- Queries --------------------------------------
+----------------------------------------------------------------------------------
+--1. If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes - how much money has Pizza Runner made so far if there are no delivery fees?
+SELECT SUM(price) AS revenue
+FROM (
+        SELECT c.pizza_id, SUM(CASE WHEN c.pizza_id = 1 THEN 12 ELSE 10 END) AS price
+           FROM customer_orders_clean c JOIN runner_orders_clean r
+           ON c.order_id = r.order_id
+           WHERE r.cancellation IS NULL
+           GROUP BY c.pizza_id
+     ) AS sub;
+    
+| revenue |
+| ------- |
+| 138     |
+
+
+--2. If a Meat Lovers pizza was $12 and Vegetarian $10 fixed prices with no cost for extras and each runner is paid $0.30 per kilometre traveled - how much money does Pizza Runner have left over after these deliveries?
+WITH total_revenue AS (
+                        SELECT c.pizza_id, c.order_id, SUM(CASE WHEN c.pizza_id = 1 THEN 12 
+                                                                   ELSE 10 END) AS price
+                        FROM customer_orders_clean c JOIN runner_orders_clean r
+                        ON c.order_id = r.order_id
+                        WHERE r.cancellation IS NULL
+                        GROUP BY c.pizza_id, c.order_id
+                      ),
+   
+   delivery_revenue AS (
+                          SELECT t.order_id, SUM(t.price) AS total_r, r.distance * 0.30 AS total_delivery_fee
+                          FROM total_revenue t LEFT JOIN runner_orders_clean r 
+                          ON t.order_id = r.order_id
+                          WHERE r.cancellation IS NULL 
+                          GROUP BY t.order_id, r.distance
+                       )
+SELECT SUM(total_r - total_delivery_fee) AS revenue_minus_deliveryfees
+FROM delivery_revenue;
+
+| revenue_minus_deliveryfees |
+| -------------------------- |
+| 94.440                     |
+
+
+---
