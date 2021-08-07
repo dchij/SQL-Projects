@@ -1,1 +1,245 @@
+------------------------------------------------------------------------------------
+---------------------------------- Ingredient Optimisation -----------------------------------
+------------------------------------------------------------------------------------
 
+/* First clean the given tables */
+
+-- Cleaning the customer_orders table
+DROP TABLE IF EXISTS customer_orders_clean;
+CREATE TEMP TABLE customer_orders_clean AS (
+    SELECT  order_id,
+            customer_id,
+            pizza_id,
+            CASE
+                WHEN exclusions = '' THEN NULL
+                WHEN exclusions = 'null' THEN NULL
+                ELSE exclusions
+            END AS exclusions,
+            CASE
+                WHEN extras = '' THEN NULL
+                WHEN extras = 'null' THEN NULL
+                WHEN extras = 'NaN' THEN NULL
+                ELSE extras
+            END AS extras,
+            order_time
+    FROM pizza_runner.customer_orders
+);
+
+-- Sanity check for the cleaned customer_orders table
+SELECT * FROM pizza_runner.customer_orders;
+| order_id | customer_id | pizza_id | exclusions | extras | order_time               |
+| -------- | ----------- | -------- | ---------- | ------ | ------------------------ |
+| 1        | 101         | 1        |            |        | 2020-01-01T18:05:02.000Z |
+| 2        | 101         | 1        |            |        | 2020-01-01T19:00:52.000Z |
+| 3        | 102         | 1        |            |        | 2020-01-02T12:51:23.000Z |
+| 3        | 102         | 2        |            |        | 2020-01-02T12:51:23.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 2        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 5        | 104         | 1        | null       | 1      | 2020-01-08T21:00:29.000Z |
+| 6        | 101         | 2        | null       | null   | 2020-01-08T21:03:13.000Z |
+| 7        | 105         | 2        | null       | 1      | 2020-01-08T21:20:29.000Z |
+| 8        | 102         | 1        | null       | null   | 2020-01-09T23:54:33.000Z |
+| 9        | 103         | 1        | 4          | 1, 5   | 2020-01-10T11:22:59.000Z |
+| 10       | 104         | 1        | null       | null   | 2020-01-11T18:34:49.000Z |
+| 10       | 104         | 1        | 2, 6       | 1, 4   | 2020-01-11T18:34:49.000Z |
+
+---
+
+SELECT * FROM customer_orders_clean;
+| order_id | customer_id | pizza_id | exclusions | extras | order_time               |
+| -------- | ----------- | -------- | ---------- | ------ | ------------------------ |
+| 1        | 101         | 1        |            |        | 2020-01-01T18:05:02.000Z |
+| 2        | 101         | 1        |            |        | 2020-01-01T19:00:52.000Z |
+| 3        | 102         | 1        |            |        | 2020-01-02T12:51:23.000Z |
+| 3        | 102         | 2        |            |        | 2020-01-02T12:51:23.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 1        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 4        | 103         | 2        | 4          |        | 2020-01-04T13:23:46.000Z |
+| 5        | 104         | 1        |            | 1      | 2020-01-08T21:00:29.000Z |
+| 6        | 101         | 2        |            |        | 2020-01-08T21:03:13.000Z |
+| 7        | 105         | 2        |            | 1      | 2020-01-08T21:20:29.000Z |
+| 8        | 102         | 1        |            |        | 2020-01-09T23:54:33.000Z |
+| 9        | 103         | 1        | 4          | 1, 5   | 2020-01-10T11:22:59.000Z |
+| 10       | 104         | 1        |            |        | 2020-01-11T18:34:49.000Z |
+| 10       | 104         | 1        | 2, 6       | 1, 4   | 2020-01-11T18:34:49.000Z |
+
+---
+
+-- Cleaning the runner_orders table
+DROP TABLE IF EXISTS runner_orders_clean;
+CREATE TEMP TABLE runner_orders_clean AS (
+    SELECT
+        order_id,
+        runner_id,
+        CAST(
+            CASE
+                WHEN pickup_time = 'null' THEN NULL
+                ELSE pickup_time
+            END AS TIMESTAMP
+        ) AS pickup_time,
+        CAST(
+            CASE 
+                WHEN distance = 'null' THEN NULL
+                ELSE REGEXP_REPLACE(distance, '[a-z]+', '', 'g')
+            END AS DECIMAL 
+        )  AS distance,
+        CAST(
+            CASE 
+                WHEN duration = 'null' THEN NULL
+                ELSE REGEXP_REPLACE(duration, '[a-z]+', '', 'g')
+            END AS DECIMAL 
+        )  AS duration,
+        CASE
+            WHEN cancellation = 'null' OR cancellation = 'NaN' OR cancellation = '' THEN NULL
+            ELSE cancellation
+        END AS cancellation
+    FROM pizza_runner.runner_orders
+);
+
+-- Sanity check for the cleaned runner_orders table
+SELECT * FROM pizza_runner.runner_orders;
+| order_id | runner_id | pickup_time         | distance | duration   | cancellation            |
+| -------- | --------- | ------------------- | -------- | ---------- | ----------------------- |
+| 1        | 1         | 2020-01-01 18:15:34 | 20km     | 32 minutes |                         |
+| 2        | 1         | 2020-01-01 19:10:54 | 20km     | 27 minutes |                         |
+| 3        | 1         | 2020-01-02 00:12:37 | 13.4km   | 20 mins    |                         |
+| 4        | 2         | 2020-01-04 13:53:03 | 23.4     | 40         |                         |
+| 5        | 3         | 2020-01-08 21:10:57 | 10       | 15         |                         |
+| 6        | 3         | null                | null     | null       | Restaurant Cancellation |
+| 7        | 2         | 2020-01-08 21:30:45 | 25km     | 25mins     | null                    |
+| 8        | 2         | 2020-01-10 00:15:02 | 23.4 km  | 15 minute  | null                    |
+| 9        | 2         | null                | null     | null       | Customer Cancellation   |
+| 10       | 1         | 2020-01-11 18:50:20 | 10km     | 10minutes  | null                    |
+
+---
+
+SELECT * FROM runner_orders_clean;
+
+| order_id | runner_id | pickup_time              | distance | duration | cancellation            |
+| -------- | --------- | ------------------------ | -------- | -------- | ----------------------- |
+| 1        | 1         | 2020-01-01T18:15:34.000Z | 20       | 32       |                         |
+| 2        | 1         | 2020-01-01T19:10:54.000Z | 20       | 27       |                         |
+| 3        | 1         | 2020-01-02T00:12:37.000Z | 13.4     | 20       |                         |
+| 4        | 2         | 2020-01-04T13:53:03.000Z | 23.4     | 40       |                         |
+| 5        | 3         | 2020-01-08T21:10:57.000Z | 10       | 15       |                         |
+| 6        | 3         |                          |          |          | Restaurant Cancellation |
+| 7        | 2         | 2020-01-08T21:30:45.000Z | 25       | 25       |                         |
+| 8        | 2         | 2020-01-10T00:15:02.000Z | 23.4     | 15       |                         |
+| 9        | 2         |                          |          |          | Customer Cancellation   |
+| 10       | 1         | 2020-01-11T18:50:20.000Z | 10       | 10       |                         |
+
+---
+
+
+----------------------------------------------------------------------------------
+----------------------------------- Queries --------------------------------------
+----------------------------------------------------------------------------------
+--1. What are the standard ingredients for each pizza?
+WITH pizza_recipes_unstacked AS (
+                                  SELECT pizza_id, 
+                                  CAST(
+                                       UNNEST( string_to_array(toppings, ',') ) AS INT
+                                      ) AS topping_id
+                                  FROM pizza_runner.pizza_recipes
+                                 )
+ SELECT pn.pizza_id, pn.pizza_name, pru.topping_id, pt.topping_name
+ FROM pizza_runner.pizza_names pn
+ JOIN pizza_recipes_unstacked pru ON pn.pizza_id = pru.pizza_id
+ JOIN pizza_runner.pizza_toppings pt ON pt.topping_id = pru.topping_id
+ ORDER BY pn.pizza_id, pru.topping_id;
+ 
+| pizza_id | pizza_name | topping_id | topping_name |
+| -------- | ---------- | ---------- | ------------ |
+| 1        | Meatlovers | 1          | Bacon        |
+| 1        | Meatlovers | 2          | BBQ Sauce    |
+| 1        | Meatlovers | 3          | Beef         |
+| 1        | Meatlovers | 4          | Cheese       |
+| 1        | Meatlovers | 5          | Chicken      |
+| 1        | Meatlovers | 6          | Mushrooms    |
+| 1        | Meatlovers | 8          | Pepperoni    |
+| 1        | Meatlovers | 10         | Salami       |
+| 2        | Vegetarian | 4          | Cheese       |
+| 2        | Vegetarian | 6          | Mushrooms    |
+| 2        | Vegetarian | 7          | Onions       |
+| 2        | Vegetarian | 9          | Peppers      |
+| 2        | Vegetarian | 11         | Tomatoes     |
+| 2        | Vegetarian | 12         | Tomato Sauce |
+
+
+--2. What was the most commonly added extra?
+WITH extras_unstacked AS (
+                                  SELECT 
+                                  CAST(
+                                       UNNEST( string_to_array(extras, ',') ) AS INT
+                                      ) AS extra_topping_id
+                                  FROM customer_orders_clean
+                           )
+ SELECT eu.extra_topping_id, pt.topping_name, COUNT(*) AS no_of_times_ordered
+ FROM extras_unstacked eu 
+ JOIN pizza_runner.pizza_toppings pt ON pt.topping_id = eu.extra_topping_id
+ GROUP BY 1,2
+ ORDER BY 3 DESC;
+ 
+| extra_topping_id | topping_name | no_of_times_ordered |
+| ---------------- | ------------ | ------------------- |
+| 1                | Bacon        | 4                   |
+| 4                | Cheese       | 1                   |
+| 5                | Chicken      | 1                   |
+
+
+--3. What was the most common exclusion?
+WITH exclusions_unstacked AS (
+                                  SELECT 
+                                  CAST(
+                                       UNNEST( string_to_array(exclusions, ',') ) AS INT
+                                      ) AS exclusions_topping_id
+                                  FROM customer_orders_clean
+                               )
+ SELECT exu.exclusions_topping_id, pt.topping_name, COUNT(*) AS no_of_times_excluded
+ FROM exclusions_unstacked exu 
+ JOIN pizza_runner.pizza_toppings pt ON pt.topping_id = exu.exclusions_topping_id
+ GROUP BY 1,2
+ ORDER BY 3 DESC;
+ 
+| exclusions_topping_id | topping_name | no_of_times_excluded |
+| --------------------- | ------------ | -------------------- |
+| 4                     | Cheese       | 4                    |
+| 2                     | BBQ Sauce    | 1                    |
+| 6                     | Mushrooms    | 1                    |
+
+
+--4. What is the total quantity of each ingredient used in all delivered pizzas sorted by most frequent first?
+WITH pizza_recipes_unstacked AS (
+                                  SELECT pizza_id, 
+                                  CAST(
+                                       UNNEST( string_to_array(toppings, ',') ) AS INT
+                                      ) AS topping_id
+                                  FROM pizza_runner.pizza_recipes
+                                 )
+ SELECT pru.topping_id, pt.topping_name, COUNT(*) AS no_of_times_used
+ FROM pizza_recipes_unstacked pru 
+ JOIN pizza_runner.pizza_toppings pt ON pt.topping_id = pru.topping_id
+ JOIN customer_orders_clean c ON c.pizza_id = pru.pizza_id
+ JOIN runner_orders_clean r ON r.order_id = c.order_id
+ WHERE r.cancellation IS NULL
+ GROUP BY 1,2
+ ORDER BY 3 DESC;
+ 
+| topping_id | topping_name | no_of_times_used |
+| ---------- | ------------ | ---------------- |
+| 6          | Mushrooms    | 12               |
+| 4          | Cheese       | 12               |
+| 8          | Pepperoni    | 9                |
+| 10         | Salami       | 9                |
+| 1          | Bacon        | 9                |
+| 2          | BBQ Sauce    | 9                |
+| 5          | Chicken      | 9                |
+| 3          | Beef         | 9                |
+| 11         | Tomatoes     | 3                |
+| 9          | Peppers      | 3                |
+| 12         | Tomato Sauce | 3                |
+| 7          | Onions       | 3                |
+
+
+---
