@@ -1,1 +1,190 @@
+**Schema (PostgreSQL v13)*
 
+---
+--A. Data Analysis Questions
+--1. How many customers has Foodie-Fi ever had?
+SELECT COUNT(DISTINCT customer_id) AS "Total Customers"
+FROM foodie_fi.subscriptions;
+
+| Total Customers |
+| --------------- |
+| 1000            |
+
+
+--2. What is the monthly distribution of trial plan start_date values for our dataset? - use the start of the month as the group by value
+SELECT EXTRACT(MONTH FROM start_date) AS months, COUNT(*) AS distribution
+FROM foodie_fi.subscriptions
+WHERE plan_id = 0
+GROUP BY 1;
+
+| months | distribution |
+| ------ | ------------ |
+| 1      | 88           |
+| 2      | 68           |
+| 3      | 94           |
+| 4      | 81           |
+| 5      | 88           |
+| 6      | 79           |
+| 7      | 89           |
+| 8      | 88           |
+| 9      | 87           |
+| 10     | 79           |
+| 11     | 75           |
+| 12     | 84           |
+
+
+--3. What plan start_date values occur after the year 2020 for our dataset? Show the breakdown by count of events for each plan_name
+SELECT s.plan_id, plan_name, COUNT(*) AS count_of_events
+FROM foodie_fi.subscriptions s
+JOIN foodie_fi.plans p ON s.plan_id = p.plan_id
+WHERE start_date > '2020-12-31' 
+GROUP BY 1, 2
+ORDER BY 1;
+
+| plan_id | plan_name     | count_of_events |
+| ------- | ------------- | --------------- |
+| 1       | basic monthly | 8               |
+| 2       | pro monthly   | 60              |
+| 3       | pro annual    | 63              |
+| 4       | churn         | 71              |
+
+
+--4. What is the customer count and percentage of customers who have churned rounded to 1 decimal place?
+SELECT COUNT(DISTINCT s.customer_id) AS customer_count, CAST(COUNT(DISTINCT s.customer_id)AS float)/(SELECT COUNT(DISTINCT customer_id) FROM foodie_fi.subscriptions)*100 AS customer_percentage
+FROM foodie_fi.subscriptions s
+JOIN foodie_fi.plans p ON s.plan_id = p.plan_id
+WHERE p.plan_name = 'churn';
+
+| customer_count | customer_percentage |
+| -------------- | ------------------- |
+| 307            | 30.7                |
+
+
+--5. How many customers have churned straight after their initial free trial - what percentage is this rounded to the nearest whole number?
+ WITH direct_churn AS (
+                         SELECT *, 
+                         LEAD(plan_id, 1) OVER(PARTITION BY customer_id ORDER BY start_date) as next_plan
+                         FROM foodie_fi.subscriptions
+                      )
+ SELECT COUNT(DISTINCT customer_id) AS count_direct_churn, COUNT(DISTINCT customer_id)::float/(SELECT COUNT(DISTINCT customer_id) FROM foodie_fi.subscriptions)*100 AS percentage_direct_churn
+ FROM direct_churn
+ WHERE plan_id = 0 AND next_plan = 4;
+ 
+| count_direct_churn | percentage_direct_churn |
+| ------------------ | ----------------------- |
+| 92                 | 9.2                     |
+
+
+ --6. What is the number and percentage of customer plans after their initial free trial?
+DROP TABLE IF EXISTS next_plan_cte;
+CREATE TEMP TABLE next_plan_cte AS
+                            (
+                              SELECT *, 
+                              LEAD(plan_id, 1) OVER(PARTITION BY customer_id ORDER BY start_date) as next_plan
+                              FROM foodie_fi.subscriptions
+                            );
+
+DROP TABLE IF EXISTS current_plan;
+CREATE TEMP TABLE current_plan AS (
+                                    SELECT plan_id, COUNT(DISTINCT customer_id) AS current_plan_count
+                                    FROM foodie_fi.subscriptions
+                                    GROUP BY plan_id
+                                  );     
+                                  
+WITH planning AS  (
+                    SELECT next_plan, COUNT(*) AS next_plan_count
+                    FROM next_plan_cte
+                    WHERE next_plan IS NOT NULL AND plan_id = 0
+                    GROUP BY next_plan)
+
+SELECT plan_id, current_plan_count, next_plan_count, ROUND(CAST(next_plan_count::float/current_plan_count::float *100 AS numeric), 2) AS percentage
+FROM current_plan c JOIN planning p ON c.plan_id = p.next_plan;  
+
+| plan_id | current_plan_count | next_plan_count | percentage |
+| ------- | ------------------ | --------------- | ---------- |
+| 1       | 546                | 546             | 100.00     |
+| 2       | 539                | 325             | 60.30      |
+| 3       | 258                | 37              | 14.34      |
+| 4       | 307                | 92              | 29.97      |
+
+
+--7. How many customers have upgraded to an annual plan in 2020?
+SELECT COUNT(DISTINCT customer_id) AS upgraded_annual_customers
+FROM next_plan_cte
+WHERE next_plan = 3 AND (start_date BETWEEN '2020-01-01' AND '2020-12-31');
+
+| upgraded_annual_customers |
+| ------------------------- |
+| 253                       |
+
+
+--8. How many days on average does it take for a customer to upgrade to an annual plan from the day they join Foodie-Fi?
+WITH join_date AS (
+                    SELECT customer_id, start_date::date
+                    FROM foodie_fi.subscriptions
+                    WHERE plan_id = 0
+                  ),
+                  
+  upgrade_date AS (
+                    SELECT customer_id, start_date::date AS annual_join_date
+                    FROM foodie_fi.subscriptions
+                    WHERE plan_id = 3
+                  )
+                  
+SELECT ROUND(AVG(annual_join_date - start_date), 2) AS avg_days_to_upgrade
+FROM join_date j JOIN upgrade_date u ON j.customer_id = u.customer_id;
+
+| avg_days_to_upgrade |
+| ------------------- |
+| 104.62              |
+
+
+--9. Can you further breakdown this average value into 30 day periods (i.e. 0-30 days, 31-60 days etc)
+WITH join_date AS (
+                    SELECT customer_id, start_date::date
+                    FROM foodie_fi.subscriptions
+                    WHERE plan_id = 0
+                  ),
+                  
+  upgrade_date AS (
+                    SELECT customer_id, start_date::date AS annual_join_date
+                    FROM foodie_fi.subscriptions
+                    WHERE plan_id = 3
+                  ),
+ 
+         bins AS  (
+                    SELECT WIDTH_BUCKET(annual_join_date - start_date, 0, 360, 12) AS avg_days_to_upgrade
+                    FROM join_date j JOIN upgrade_date u
+                    ON j.customer_id = u.customer_id)
+                    
+SELECT ((avg_days_to_upgrade - 1)*30 || '-' || (avg_days_to_upgrade)*30) AS "30-day-range", COUNT(*)
+FROM bins
+GROUP BY avg_days_to_upgrade
+ORDER BY avg_days_to_upgrade;
+
+| 30-day-range | count |
+| ------------ | ----- |
+| 0-30         | 48    |
+| 30-60        | 25    |
+| 60-90        | 33    |
+| 90-120       | 35    |
+| 120-150      | 43    |
+| 150-180      | 35    |
+| 180-210      | 27    |
+| 210-240      | 4     |
+| 240-270      | 5     |
+| 270-300      | 1     |
+| 300-330      | 1     |
+| 330-360      | 1     |
+
+
+--10. How many customers downgraded from a pro monthly to a basic monthly plan in 2020?
+SELECT COUNT(DISTINCT customer_id) AS customer_count_downgrade
+FROM next_plan_cte
+WHERE plan_id = 2 AND next_plan = 1;
+
+| customer_count_downgrade |
+| ------------------------ |
+| 0                        |
+
+---
