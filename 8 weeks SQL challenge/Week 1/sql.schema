@@ -1,4 +1,4 @@
--- **Schema (PostgreSQL v13)**
+**Schema (PostgreSQL v13)**
 
 CREATE TABLE sales (
   "customer_id" VARCHAR(1),
