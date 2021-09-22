@@ -195,14 +195,14 @@ SELECT
                             ELSE m.price * 10 END) AS points 
 FROM members c JOIN sales s ON c.customer_id = s.customer_id 
 JOIN menu m ON s.product_id = m.product_id
-WHERE order_date BETWEEN c.join_date AND '2021-01-31'
+WHERE order_date  <= '2021-01-31'
 GROUP BY s.customer_id
 ORDER BY 1;
 
 | customer_id | points |
 | ----------- | ------ |
-| A           | 1020   |
-| B           | 440    |
+| A           | 1370   |
+| B           | 940    |
 
 ---
 -- #################################
