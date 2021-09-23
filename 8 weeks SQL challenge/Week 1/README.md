@@ -27,7 +27,9 @@ You can inspect the entity relationship diagram and example data below or [here]
 ### **Datasets**
 All datasets exist within the `dannys_diner database schema` which can be found [here](https://github.com/dchij/SQL-Projects/blob/main/8%20weeks%20SQL%20challenge/Week%201/sql.schema)
 * Table 1: `sales` - The sales table captures all customer_id level purchases with an corresponding order_date and product_id information for when and what menu items were ordered.
+
 * Table 2: `menu` - The menu table maps the product_id to the actual product_name and price of each menu item.
+
 * Table 3: `members` - The final members table captures the join_date when a customer_id joined the beta version of the Danny’s Diner loyalty program.
 
 ### **Case Study Questions**
